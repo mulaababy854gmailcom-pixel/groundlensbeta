@@ -279,10 +279,10 @@ with tab_buildability:
         "fringe opportunities and suppressed neighborhoods."
     )
 
-    df = load_scored_parcels()
-    st.write(df.columns.tolist())
+df = load_scored_parcels()
+st.write(df.columns.tolist())
 
-    st.subheader("Scored Parcel Summary")
+st.subheader("Scored Parcel Summary")
     col_a, col_b, col_c, col_d = st.columns(4)
     with col_a:
         st.metric("Total Parcels", f"{len(df):,}")
@@ -308,7 +308,6 @@ with tab_buildability:
             min_val,
             max_val if max_val > min_val else min_val + 1,
             min_val,
-        
         )
     with f2:
         build_threshold = st.slider(
