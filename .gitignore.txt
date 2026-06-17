@@ -1,0 +1,11 @@
+data/
+*.geojson
+*.shp
+*.dbf
+*.prj
+*.shx
+*.tif
+*.tiff
+*.zip
+*.parquet
+*.csv

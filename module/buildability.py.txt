@@ -1,0 +1,107 @@
+import geopandas as gpd
+import numpy as np
+
+def parcel_size_score(area_sqft):
+    if area_sqft < 1500: return 10
+    if area_sqft < 3000: return 40
+    if area_sqft < 10000: return 90
+    if area_sqft < 20000: return 70
+    return 40
+
+
+def landuse_score(parcel_geom, landuse_gdf):
+    intersecting = landuse_gdf[landuse_gdf.intersects(parcel_geom)]
+    if intersecting.empty:
+        return 50
+
+    lu = intersecting.iloc[0].get("fclass", "").lower()
+
+    if "residential" in lu: return 90
+    if "grass" in lu or "meadow" in lu or "vacant" in lu: return 80
+    if "commercial" in lu: return 60
+    if "industrial" in lu: return 30
+    return 50
+
+
+def building_presence_score(parcel_geom, osm_bld, ms_bld):
+    osm_hit = osm_bld[osm_bld.intersects(parcel_geom)]
+    ms_hit = ms_bld[ms_bld.intersects(parcel_geom)]
+    if not osm_hit.empty or not ms_hit.empty:
+        return 20
+    return 90
+
+
+def nearest_distance_score(parcel_geom, buildings_gdf):
+    if buildings_gdf.empty:
+        return 50
+
+    centroid = parcel_geom.centroid
+    sindex = buildings_gdf.sindex
+
+    raw = sindex.nearest(centroid, 1)
+    idx = int(np.array(raw).flatten()[0])
+    nearest_geom = buildings_gdf.geometry.iloc[idx]
+
+    dist = float(centroid.distance(nearest_geom))
+
+    if dist < 20: return 90
+    if dist < 50: return 80
+    if dist < 100: return 60
+    if dist < 200: return 40
+    return 20
+
+
+def zoning_score(parcel_row):
+    # placeholder until you have zoning data
+    return 50
+
+
+def score_parcels(
+    parcels_path="data/open/flint_parcels.geojson",
+    landuse_path="data/open/flint_landuse.geojson",
+    osm_path="data/open/flint_osm_buildings.geojson",
+    ms_path="data/open/flint_ms_buildings.geojson",
+):
+    print("Loading parcels...")
+    parcels = gpd.read_file(parcels_path).to_crs(3857)
+
+    print("Loading Flint landuse...")
+    landuse = gpd.read_file(landuse_path).to_crs(3857)
+
+    print("Loading OSM buildings...")
+    osm_bld = gpd.read_file(osm_path).to_crs(3857)
+
+    print("Loading Microsoft buildings...")
+    ms_bld = gpd.read_file(ms_path).to_crs(3857)
+
+    scores = []
+
+    for idx, row in parcels.iterrows():
+        geom = row.geometry
+        area_sqft = geom.area * 10.7639
+
+        s_size = parcel_size_score(area_sqft)
+        s_land = landuse_score(geom, landuse)
+        s_bld = building_presence_score(geom, osm_bld, ms_bld)
+        s_dist = nearest_distance_score(geom, ms_bld)
+        s_zone = zoning_score(row)
+
+        buildability = (
+            s_size * 0.25 +
+            s_land * 0.20 +
+            s_bld * 0.20 +
+            s_dist * 0.15 +
+            s_zone * 0.20
+        )
+
+        scores.append(buildability)
+
+    parcels["buildability_score"] = scores
+
+    # also keep a 4326 version for mapping
+    parcels_4326 = parcels.to_crs(4326)
+
+    # top 50
+    top50 = parcels.sort_values("buildability_score", ascending=False).head(50)
+
+    return parcels, parcels_4326, top50
