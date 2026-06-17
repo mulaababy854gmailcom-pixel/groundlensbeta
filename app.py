@@ -286,11 +286,11 @@ with tab_buildability:
     with col_a:
         st.metric("Total Parcels", f"{len(df):,}")
     with col_b:
-        st.metric("Avg Buildability", f"{df['buildability_score"].mean():.1f}")
+        st.metric("Avg Buildability", f"{df['buildability_score'].mean():.1f}")
     with col_c:
-        st.metric("Avg Property Value", f"${df['property_value"].mean():,.0f}")
+        st.metric("Avg Property Value", f"${df['property_value'].mean():,.0f}")
     with col_d:
-        st.metric("Avg Suppression Index", f"{df['suppression_index"].mean():.1f}")
+        st.metric("Avg Suppression Index", f"{df['suppression_index'].mean():.1f}")
 
     st.markdown("---")
     st.subheader("Filters")
