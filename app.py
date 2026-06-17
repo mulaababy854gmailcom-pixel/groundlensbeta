@@ -60,6 +60,8 @@ def init_session_state():
         "selected_row": None,
         "purchase_price": 85000,
         "rehab_cost": 45000,
+        "map_center_lat": None,
+        "map_center_lon": None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -75,6 +77,11 @@ def set_selected_parcel(row):
     st.session_state["purchase_price"] = max(1000, round(pv))
     # Simple heuristic for rehab
     st.session_state["rehab_cost"] = max(0, round(pv * 0.5))
+
+    # Center map on this parcel
+    if "lat" in row and "lon" in row:
+        st.session_state["map_center_lat"] = float(row["lat"])
+        st.session_state["map_center_lon"] = float(row["lon"])
 
 
 # =========================
@@ -279,11 +286,11 @@ with tab_buildability:
     with col_a:
         st.metric("Total Parcels", f"{len(df):,}")
     with col_b:
-        st.metric("Avg Buildability", f"{df['buildability_score'].mean():.1f}")
+        st.metric("Avg Buildability", f"{df['buildability_score"].mean():.1f}")
     with col_c:
-        st.metric("Avg Property Value", f"${df['property_value'].mean():,.0f}")
+        st.metric("Avg Property Value", f"${df['property_value"].mean():,.0f}")
     with col_d:
-        st.metric("Avg Suppression Index", f"{df['suppression_index'].mean():.1f}")
+        st.metric("Avg Suppression Index", f"{df['suppression_index"].mean():.1f}")
 
     st.markdown("---")
     st.subheader("Filters")
@@ -384,6 +391,24 @@ with tab_buildability:
     if len(filtered) == 0:
         st.info("No parcels match the current filters. Try lowering thresholds.")
     else:
+        # Map controls
+        perf_mode_col, style_col = st.columns(2)
+        with perf_mode_col:
+            performance_mode = st.radio(
+                "Performance mode",
+                ["Sampled (fast)", "Full (all points)"],
+                horizontal=True,
+            )
+        with style_col:
+            map_style_choice = st.selectbox(
+                "Map style",
+                ["Dark", "Light", "Satellite", "Streets"],
+            )
+
+        base_opacity = st.slider("Base layer opacity", 0.1, 1.0, 0.8)
+        glow_opacity = st.slider("Glow layer opacity", 0.1, 1.0, 0.9)
+        suppression_opacity = st.slider("Suppression layer opacity", 0.1, 1.0, 0.6)
+
         # Map layer type toggle
         layer_type = st.radio(
             "Base Map Layer Type",
@@ -391,54 +416,77 @@ with tab_buildability:
             horizontal=True,
         )
 
-        # To keep map light, sample if huge
-        if len(filtered) > 20000:
+        # Performance mode sampling
+        if performance_mode.startswith("Sampled") and len(filtered) > 20000:
             filtered_map = filtered.sample(n=20000, random_state=42)
         else:
             filtered_map = filtered
 
-        # Base layer selection
+        # Centering (click-to-zoom via parcel selection)
+        center_lat = st.session_state.get("map_center_lat", float(filtered_map["lat"].mean()))
+        center_lon = st.session_state.get("map_center_lon", float(filtered_map["lon"].mean()))
+
+        # Mapbox style mapping
+        if map_style_choice == "Dark":
+            map_style = "mapbox://styles/mapbox/dark-v9"
+        elif map_style_choice == "Light":
+            map_style = "mapbox://styles/mapbox/light-v9"
+        elif map_style_choice == "Satellite":
+            map_style = "mapbox://styles/mapbox/satellite-v9"
+        else:
+            map_style = "mapbox://styles/mapbox/streets-v11"
+
+        # ============================
+        # PARCEL-SCALE LAYER SETTINGS
+        # ============================
+
         if layer_type == "HexagonLayer":
             base_layer = pdk.Layer(
                 "HexagonLayer",
                 filtered_map,
                 get_position=["lon", "lat"],
-                radius=120,
-                elevation_scale=4,
-                elevation_range=[0, 3000],
+                radius=25,
+                elevation_scale=10,
+                elevation_range=[0, 200],
                 extruded=True,
                 coverage=1,
                 get_weight="buildability_score",
                 pickable=True,
+                opacity=base_opacity,
             )
         elif layer_type == "GridLayer":
             base_layer = pdk.Layer(
                 "GridLayer",
                 filtered_map,
                 get_position=["lon", "lat"],
-                cell_size=120,
+                cell_size=25,
                 extruded=True,
-                elevation_scale=4,
+                elevation_scale=10,
                 get_weight="buildability_score",
                 pickable=True,
+                opacity=base_opacity,
             )
         elif layer_type == "ScreenGridLayer":
             base_layer = pdk.Layer(
                 "ScreenGridLayer",
                 filtered_map,
                 get_position=["lon", "lat"],
-                cell_size_pixels=40,
+                cell_size_pixels=8,
                 get_weight="buildability_score",
                 pickable=True,
+                opacity=base_opacity,
             )
         else:  # ScatterplotLayer
             base_layer = pdk.Layer(
                 "ScatterplotLayer",
                 filtered_map,
                 get_position=["lon", "lat"],
-                get_radius=25,
-                get_fill_color="[buildability_score * 2.5, 255 - buildability_score * 2.5, 80, 160]",
+                get_radius=3,
+                get_fill_color="[buildability_score * 2.5, 255 - buildability_score * 2.5, 80, 200]",
                 pickable=True,
+                opacity=base_opacity,
+                line_width_min_pixels=1,
+                get_line_color=[0, 0, 0, 255],  # hover-like outlines
             )
 
         layers = [base_layer]
@@ -453,9 +501,12 @@ with tab_buildability:
                 "ScatterplotLayer",
                 opp,
                 get_position=["lon", "lat"],
-                get_radius=60,
+                get_radius=12,
                 get_fill_color="[255, 255, 0, 255]",
                 pickable=True,
+                opacity=glow_opacity,
+                line_width_min_pixels=1,
+                get_line_color=[0, 0, 0, 255],
             )
             layers.append(glow_layer)
 
@@ -464,15 +515,17 @@ with tab_buildability:
             "ScatterplotLayer",
             filtered_map,
             get_position=["lon", "lat"],
-            get_radius=10,
+            get_radius=4,
             get_fill_color="[suppression_index * 2, 50, 255 - suppression_index * 2, 120]",
             pickable=False,
+            opacity=suppression_opacity,
+            line_width_min_pixels=0,
         )
         layers.append(suppression_layer)
 
         view_state = pdk.ViewState(
-            latitude=float(filtered_map["lat"].mean()),
-            longitude=float(filtered_map["lon"].mean()),
+            latitude=center_lat,
+            longitude=center_lon,
             zoom=11,
             pitch=45,
         )
@@ -489,6 +542,8 @@ with tab_buildability:
             layers=layers,
             initial_view_state=view_state,
             tooltip=tooltip,
+            map_style=map_style,
         )
 
         st.pydeck_chart(deck)
+
