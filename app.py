@@ -280,6 +280,7 @@ with tab_buildability:
     )
 
     df = load_scored_parcels()
+    
     st.write(df['geometry'].iloc[0])
 
     st.subheader("Scored Parcel Summary")
