@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 # etc...
 
-import pyogrio
 from shapely.geometry import shape
 
 # =========================
@@ -22,19 +21,25 @@ def calc_monthly_pni(principal, annual_rate, years):
 # DATA LOADING
 # ================================
 
-import pyogrio
+import json
 from shapely.geometry import shape
 
 @st.cache_data(show_spinner=True)
 def load_scored_parcels():
-    # Read GeoJSON using pyogrio (Streamlit Cloud compatible)
-    gdf = pyogrio.read_dataframe("flint_parcels_scored.geojson")
+    # Load raw GeoJSON
+    with open("flint_parcels_scored.geojson", "r") as f:
+        data = json.load(f)
 
-    # Ensure geometry is Shapely
-    gdf["geometry"] = gdf["geometry"].apply(lambda g: shape(g) if not hasattr(g, "geom_type") else g)
+    # Convert features into a DataFrame-like structure
+    records = []
+    for feature in data["features"]:
+        props = feature["properties"]
+        geom = shape(feature["geometry"])
+        props["geometry"] = geom
+        records.append(props)
 
-    return gdf
-
+    df = pd.DataFrame(records)
+    return df
 
     for col in [
         "property_value",
