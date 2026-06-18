@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
-import pydeck as pdk
 import numpy as np
+# etc...
+import geopandas as gpd
 
 # =========================
 # CORE FINANCE HELPERS
@@ -15,14 +16,16 @@ def calc_monthly_pni(principal, annual_rate, years):
     return principal * (monthly_rate * (1 + monthly_rate)**num_payments) / ((1 + monthly_rate)**num_payments - 1)
 
 
-# =========================
+# ================================
 # DATA LOADING
-# =========================
+# ================================
+
+import geopandas as gpd
 
 @st.cache_data(show_spinner=True)
 def load_scored_parcels():
-    url = "https://github.com/mulaababy854gmailcom-pixel/groundlensbeta/releases/download/v1.0.0/flint_scored.parquet"
-    df = pd.read_parquet(url)
+    gdf = gpd.read_file("flint_parcels_scored.geojson")
+    return gdf
 
     for col in [
         "property_value",
