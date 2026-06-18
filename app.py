@@ -20,12 +20,19 @@ def calc_monthly_pni(principal, annual_rate, years):
 # DATA LOADING
 # ================================
 
-import geopandas as gpd
+import pyogrio
+from shapely.geometry import shape
 
 @st.cache_data(show_spinner=True)
 def load_scored_parcels():
-    gdf = gpd.read_file("flint_parcels_scored.geojson")
+    # Read GeoJSON using pyogrio (Streamlit Cloud compatible)
+    gdf = pyogrio.read_dataframe("flint_parcels_scored.geojson")
+
+    # Ensure geometry is Shapely
+    gdf["geometry"] = gdf["geometry"].apply(lambda g: shape(g) if not hasattr(g, "geom_type") else g)
+
     return gdf
+
 
     for col in [
         "property_value",
