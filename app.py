@@ -26,11 +26,9 @@ from shapely.geometry import shape
 
 @st.cache_data(show_spinner=True)
 def load_scored_parcels():
-    # Load raw GeoJSON
     with open("flint_parcels_scored.geojson", "r") as f:
         data = json.load(f)
 
-    # Convert features into a DataFrame-like structure
     records = []
     for feature in data["features"]:
         props = feature["properties"]
@@ -40,6 +38,7 @@ def load_scored_parcels():
 
     df = pd.DataFrame(records)
     return df
+
 
     for col in [
         "property_value",
