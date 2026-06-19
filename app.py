@@ -243,7 +243,7 @@ with tab_proforma:
             st.metric("Active Financing P&I", f"${initial_monthly_pni:,.2f}")
 
     st.markdown("---")
-    st.header(f"📊 Master Dashboard: {strategy.upper()} Metrics")
+st.header(f"📊 Master Dashboard: {strategy.upper()} Metrics")
 
     if strategy == "Rent":
         total_capital_invested = down_payment_amount + closing_costs_buy
