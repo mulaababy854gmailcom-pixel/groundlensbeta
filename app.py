@@ -176,41 +176,6 @@ with tab_proforma:
         arv = st.number_input("After Repair Value (ARV) ($)", value=175000, step=5000)
 
     st.markdown("---")
-    st.header("🔍 Underwriting & Structural Breakout")
-    b1, b2, b3 = st.columns(3)
-
-    with b1:
-        st.subheader("Initial Debt Structure")
-        st.metric("Initial Loan Basis", f"${initial_loan_basis:,.2f}")
-        st.metric("Initial Loan Amount", f"${initial_loan_amount:,.2f}")
-        st.metric("Initial Monthly P&I Mortgage", f"${initial_monthly_pni:,.2f}")
-
-    with b2:
-        if strategy in ["Rent", "BRRRR"]:
-            st.subheader("Monthly Property Operations")
-            st.metric("Net Operating Income (NOI)", f"${noi:,.2f}")
-            st.metric("Total Operating Expenses (OpEx)", f"${total_opex:,.2f}")
-        else:
-            st.subheader("Holding Phase Metrics")
-            st.metric("Monthly Carrying Cost", f"${monthly_hold_costs:,.2f}")
-            st.metric("Total Cumulative Carry", f"${total_holding_costs:,.2f}")
-
-    with b3:
-        if strategy == "BRRRR":
-            st.subheader("Post-Refinance Debt Structure")
-            st.metric("New Refinance Loan Amount", f"${refi_loan_amount:,.2f}")
-            st.metric("New Refi Monthly P&I Mortgage", f"${refi_monthly_pni:,.2f}")
-        elif strategy == "Flip":
-            st.subheader("Total Sunk Costs")
-            st.metric(
-                "Total Capital Sunk",
-                f"${(down_payment_amount + upfront_rehab_cash + closing_costs_buy + total_holding_costs):,.2f}",
-            )
-        else:
-            st.subheader("Financing Baseline")
-            st.metric("Active Financing P&I", f"${initial_monthly_pni:,.2f}")
-
-    st.markdown("---")
     st.header(f"📊 Master Dashboard: {strategy.upper()} Metrics")
 
     if strategy == "Rent":
@@ -279,23 +244,12 @@ with tab_buildability:
     # 3. Suppression Index Logic (real factors)
     df["suppression_index"] = 0.0
 
-    # Economic suppression: low ECF
     df["suppression_index"] += np.clip((1 - df["ECF"]), 0, 1) * 30
-
-    # Structural suppression: low improvement vs land
     df["value_ratio"] = df["Resb_Value"] / (df["Land_Value"] + 1)
     df["suppression_index"] += np.clip((1 - df["value_ratio"]), 0, 1) * 20
-
-    # Age-based suppression
     df["suppression_index"] += np.clip((1950 - df["Year_Built"]) / 100, 0, 1) * 15
-
-    # QCT suppression
     df["suppression_index"] += df["QCTs"].apply(lambda x: 15 if x else 0)
-
-    # Rental suppression
     df["suppression_index"] += df["Rental"].apply(lambda x: 10 if x else 0)
-
-    # Blight suppression
     df["suppression_index"] += df["Inv22"].apply(lambda x: 10 if x else 0)
 
     df["suppression_index"] = np.clip(df["suppression_index"], 0, 100)
@@ -315,7 +269,7 @@ with tab_buildability:
     st.markdown("---")
     st.subheader("🗺 Parcel Heatmap (Buildability)")
 
-    # Normalize buildability score to 0–1 for color scaling
+    # Normalize buildability score to 0–1
     df["build_norm"] = (df["buildability_score"] - df["buildability_score"].min()) / (
         df["buildability_score"].max() - df["buildability_score"].min()
     )
@@ -323,14 +277,19 @@ with tab_buildability:
     # Option 2 color scale: red → orange → yellow
     def build_color(score):
         r = 255
-        g = int(100 + score * 155)  # 100 → 255
+        g = int(100 + score * 155)
         b = 0
         return [r, g, b, 180]
 
     df["color"] = df["build_norm"].apply(build_color)
 
-    # Convert Shapely polygons to deck.gl format
-    df["polygon"] = df["geometry"].apply(lambda geom: list(geom.exterior.coords))
+    # Convert polygons
+    df["polygon"] = df["geometry"].apply(lambda g: list(g.exterior.coords))
+
+    # Compute centroids correctly
+    df["centroid"] = df["geometry"].apply(lambda g: g.centroid)
+    center_lat = df["centroid"].apply(lambda c: c.y).mean()
+    center_lon = df["centroid"].apply(lambda c: c.x).mean()
 
     polygon_layer = pdk.Layer(
         "PolygonLayer",
@@ -346,8 +305,8 @@ with tab_buildability:
     )
 
     view_state = pdk.ViewState(
-        latitude=float(df.geometry.centroid.y.mean()),
-        longitude=float(df.geometry.centroid.x.mean()),
+        latitude=center_lat,
+        longitude=center_lon,
         zoom=12,
         pitch=45,
     )
