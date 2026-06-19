@@ -296,7 +296,15 @@ with tab_buildability:
 
     df = load_scored_parcels()
     
-    st.write(df.columns.tolist())
+    # Create property_value column using Michigan valuation rules
+if 'property_value' not in df.columns:
+    df['property_value'] = df['HomeSEV'] * 2
+
+    # If SEV is missing or zero, fall back to land + structure
+    missing_mask = (df['property_value'].isna()) | (df['property_value'] == 0)
+    df.loc[missing_mask, 'property_value'] = (
+        df['Land_Value'] + df['Resb_Value']
+    )
 
     st.subheader("Scored Parcel Summary")
     col_a, col_b, col_c, col_d = st.columns(4)
