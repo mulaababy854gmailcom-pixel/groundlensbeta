@@ -39,7 +39,6 @@ def load_scored_parcels():
     df = pd.DataFrame(records)
     return df
 
-
     for col in [
         "property_value",
         "buildability_score",
@@ -287,6 +286,7 @@ with tab_proforma:
 # =========================
 # TAB 2: BUILDABILITY ENGINE
 # =========================
+st.write(df.columns.tolist())
 
 with tab_buildability:
     st.header("🧱 Flint Buildability & Opportunity Radar")
