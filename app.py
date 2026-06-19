@@ -317,6 +317,112 @@ if 'property_value' not in df.columns:
     with col_d:
         st.metric("Avg Suppression Index", f"{df['suppression_index'].mean():.1f}")
 
+with tab2:
+
+    # 1. Load data
+    df = load_scored_parcels()
+
+    # 2. Property Value Logic
+    if 'property_value' not in df.columns:
+        df['property_value'] = df['HomeSEV'] * 2
+
+    missing_mask = (df['property_value'].isna()) | (df['property_value'] == 0)
+    df.loc[missing_mask, 'property_value'] = (
+        df['Land_Value'] + df['Resb_Value']
+    )
+
+    # 3. Suppression Index Logic  ⭐ MUST BE HERE ⭐
+    import numpy as np
+    df['suppression_index'] = 0.0
+    df['suppression_index'] += np.clip((1 - df['ECF']), 0, 1) * 30
+    df['value_ratio'] = df['Resb_Value'] / (df['Land_Value'] + 1)
+    df['suppression_index'] += np.clip((1 - df['value_ratio']), 0, 1) * 20
+    df['suppression_index'] += np.clip((1950 - df['Year_Built']) / 100, 0, 1) * 15
+    df['suppression_index'] += df['QCTs'].apply(lambda x: 15 if x else 0)
+    df['suppression_index'] += df['Rental'].apply(lambda x: 10 if x else 0)
+    df['suppression_index'] += df['Inv22'].apply(lambda x: 10 if x else 0)
+    df['suppression_index'] = np.clip(df['suppression_index'], 0, 100)
+
+    # 4. Summary Metrics  ⭐ NOW THIS WILL WORK ⭐
+    st.subheader("Scored Parcel Summary")
+    col_a, col_b, col_c, col_d = st.columns(4)
+    with col_a:
+        st.metric("Total Parcels", f"{len(df):,}")
+    with col_b:
+        st.metric("Avg Buildability", f"{df['buildability_score'].mean():.1f}")
+    with col_c:
+        st.metric("Avg Property Value", f"${df['property_value'].mean():,.0f}")
+    with col_d:
+        st.metric("Avg Suppression Index", f"{df['suppression_index'].mean():.1f}")
+
+    # 5. ⭐ Heatmap goes HERE ⭐
+    # (Your PolygonLayer block)
+
+#-------------------------
+# Heat Map
+#-------------------------
+
+import pydeck as pdk
+
+st.subheader("🗺 Parcel Heatmap (Buildability)")
+
+# Normalize buildability score to 0–1 for color scaling
+df["build_norm"] = (df["buildability_score"] - df["buildability_score"].min()) / (
+    df["buildability_score"].max() - df["buildability_score"].min()
+)
+
+# Option 2 color scale: red → orange → yellow
+def build_color(score):
+    # score is 0–1
+    r = int(255)
+    g = int(100 + score * 155)   # 100 → 255
+    b = int(0)
+    return [r, g, b, 180]        # alpha 180 for glow
+
+df["color"] = df["build_norm"].apply(build_color)
+
+# Convert Shapely polygons to deck.gl format
+df["polygon"] = df["geometry"].apply(lambda geom: list(geom.exterior.coords))
+
+polygon_layer = pdk.Layer(
+    "PolygonLayer",
+    df,
+    get_polygon="polygon",
+    get_fill_color="color",
+    get_line_color=[255, 255, 255],
+    get_line_width=10,
+    pickable=True,
+    stroked=True,
+    filled=True,
+    extruded=False,
+)
+
+view_state = pdk.ViewState(
+    latitude=float(df.geometry.centroid.y.mean()),
+    longitude=float(df.geometry.centroid.x.mean()),
+    zoom=12,
+    pitch=45,
+)
+
+tooltip = {
+    "html": """
+        <b>Parcel:</b> {PIDText}<br/>
+        <b>Buildability:</b> {buildability_score}<br/>
+        <b>Suppression:</b> {suppression_index}<br/>
+        <b>Value:</b> ${property_value}
+    """,
+    "style": {"color": "white"},
+}
+
+deck = pdk.Deck(
+    layers=[polygon_layer],
+    initial_view_state=view_state,
+    map_style="mapbox://styles/mapbox/dark-v11",
+    tooltip=tooltip,
+)
+
+st.pydeck_chart(deck)
+
     st.markdown("---")
     st.subheader("Filters")
 
