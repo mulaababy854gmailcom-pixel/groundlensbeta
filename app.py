@@ -286,7 +286,6 @@ with tab_proforma:
 # =========================
 # TAB 2: BUILDABILITY ENGINE
 # =========================
-st.write(df.columns.tolist())
 
 with tab_buildability:
     st.header("🧱 Flint Buildability & Opportunity Radar")
@@ -297,7 +296,7 @@ with tab_buildability:
 
     df = load_scored_parcels()
     
-    st.write(df['geometry'].iloc[0])
+    st.write(df.columns.tolist())
 
     st.subheader("Scored Parcel Summary")
     col_a, col_b, col_c, col_d = st.columns(4)
