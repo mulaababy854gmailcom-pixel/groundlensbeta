@@ -2,8 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import json
-import pydeck as pdk
-from shapely.geometry import shape
+from shapely.geometry import shape, mapping
+import folium
+from streamlit_folium import st_folium
 
 # ─── PAGE CONFIG ─────────────────────────────────────────────────────────────
 
@@ -199,17 +200,39 @@ def load_scored_parcels():
         + df["crime_score"]*0.12 + df["school_score"]*0.12 + df["utility_score"]*0.11
     ).clip(0,100)
 
-    # ── map geometry (done once here, not on every render)
-    df["polygon"] = df["_geom"].apply(lambda g: list(g.exterior.coords))
     df["build_norm"] = (df["buildability_score"] - df["buildability_score"].min()) / \
                        max(1e-9, df["buildability_score"].max()-df["buildability_score"].min())
-    df["color"] = df["build_norm"].apply(_color)
     return df
 
-def _color(s):
+def _score_to_hex(norm):
+    """Map 0-1 normalized score to navy→rust hex color."""
     navy, rust = np.array([44,74,110]), np.array([181,86,47])
-    c = (navy+(rust-navy)*s).astype(int)
-    return [int(c[0]),int(c[1]),int(c[2]),195]
+    c = (navy + (rust-navy)*np.clip(norm,0,1)).astype(int)
+    return f"#{c[0]:02x}{c[1]:02x}{c[2]:02x}"
+
+def df_to_geojson(df, max_features=2000):
+    """Convert scored parcel DataFrame to GeoJSON dict for Folium."""
+    rows = df.head(max_features)
+    features = []
+    for _, row in rows.iterrows():
+        try:
+            geom = mapping(row["_geom"])
+        except Exception:
+            continue
+        features.append({
+            "type": "Feature",
+            "geometry": geom,
+            "properties": {
+                "PIDText":            str(row.get("PIDText", "")),
+                "Full_Prop":          str(row.get("Full_Prop", "")),
+                "buildability_score": round(float(row.get("buildability_score", 0)), 1),
+                "suppression_index":  round(float(row.get("suppression_index", 0)), 1),
+                "property_value":     int(row.get("property_value", 0) or 0),
+                "value_gap_pct":      round(float(row.get("value_gap_pct", 0))*100, 1),
+                "build_norm":         float(row.get("build_norm", 0)),
+            }
+        })
+    return {"type": "FeatureCollection", "features": features}
 
 
 # ─── SESSION STATE ────────────────────────────────────────────────────────────
@@ -643,39 +666,65 @@ with tab_atlas:
         center_lat = map_df["cy"].mean()
         center_lon = map_df["cx"].mean()
 
-        polygon_layer = pdk.Layer(
-            "PolygonLayer", map_df,
-            get_polygon="polygon", get_fill_color="color",
-            get_line_color=[237,231,217], get_line_width=8,
-            pickable=True, stroked=True, filled=True, extruded=False)
+        # Cap at 2000 for browser performance; user can filter down further
+        render_df = map_df.sort_values("buildability_score", ascending=False).head(2000)
+        if len(map_df) > 2000:
+            st.caption(f"Map showing top 2,000 parcels by score — use filters above to narrow further.")
 
-        view_state = pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=12, pitch=40)
+        geojson_data = df_to_geojson(render_df)
 
-        tooltip = {"html": (
-            "<b>Parcel:</b> {PIDText}<br/>"
-            "<b>Address:</b> {Full_Prop}<br/>"
-            "<b>Buildability:</b> {buildability_score}<br/>"
-            "<b>Suppression:</b> {suppression_index}<br/>"
-            "<b>Value:</b> ${property_value}"),
-            "style": {"backgroundColor":"#1F2E3D","color":"#EDE7D9",
-                      "fontFamily":"'IBM Plex Mono',monospace","fontSize":"12px"}}
+        fmap = folium.Map(
+            location=[center_lat, center_lon],
+            zoom_start=13,
+            tiles="CartoDB dark_matter",
+            prefer_canvas=True,
+        )
 
-        # Use carto provider — no Mapbox token required
-        try:
-            deck = pdk.Deck(
-                layers=[polygon_layer],
-                initial_view_state=view_state,
-                map_provider="carto",
-                map_style="dark_matter",
-                tooltip=tooltip)
-        except Exception:
-            # Fallback for older pydeck versions
-            deck = pdk.Deck(
-                layers=[polygon_layer],
-                initial_view_state=view_state,
-                map_style=None,
-                tooltip=tooltip)
-        st.pydeck_chart(deck, use_container_width=True)
+        def style_fn(feature):
+            norm = feature["properties"].get("build_norm", 0.5)
+            return {
+                "fillColor":   _score_to_hex(norm),
+                "color":       "#EDE7D9",
+                "weight":      0.4,
+                "fillOpacity": 0.78,
+            }
+
+        folium.GeoJson(
+            geojson_data,
+            style_function=style_fn,
+            tooltip=folium.GeoJsonTooltip(
+                fields=["PIDText","Full_Prop","buildability_score",
+                        "suppression_index","value_gap_pct","property_value"],
+                aliases=["Parcel ID","Address","Buildability Score",
+                         "Suppression Index","Value Gap vs Nearby %","Assessed Value ($)"],
+                style=(
+                    "background-color:#1F2E3D; color:#EDE7D9; "
+                    "font-family:'IBM Plex Mono',monospace; font-size:12px; "
+                    "border:1px solid #B5562F; border-radius:2px; padding:6px;"
+                ),
+                sticky=True,
+            ),
+        ).add_to(fmap)
+
+        # Color legend
+        legend_html = """
+        <div style="position:fixed;bottom:30px;right:30px;z-index:1000;
+                    background:#1F2E3D;border:1px solid #B5562F;border-radius:2px;
+                    padding:10px 14px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#EDE7D9;">
+          <div style="margin-bottom:6px;font-weight:600;letter-spacing:.1em;color:#B5562F;">BUILDABILITY</div>
+          <div style="display:flex;align-items:center;gap:8px;margin:3px 0;">
+            <div style="width:14px;height:14px;background:#2c4a6e;border-radius:1px;"></div> Low
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin:3px 0;">
+            <div style="width:14px;height:14px;background:#7a6a4e;border-radius:1px;"></div> Mid
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin:3px 0;">
+            <div style="width:14px;height:14px;background:#b5562f;border-radius:1px;"></div> High
+          </div>
+        </div>"""
+        fmap.get_root().html.add_child(folium.Element(legend_html))
+
+        st_folium(fmap, use_container_width=True, height=520, returned_objects=[])
     else:
         st.info("No parcels match current filters.")
 
