@@ -3,3 +3,5 @@ pandas
 pydeck
 shapely
 runtime
+folium
+streamlit-folium
