@@ -113,22 +113,10 @@ h1, h2, h3 {
     margin-top: 2px;
 }
 
-div[data-testid="stMetric"] {
-    background-color: #FAF7EE;
-    border: 1px solid #C9C0A8;
-    border-left: 3px solid #2C4A6E;
-    padding: 0.7rem 0.9rem 0.5rem 0.9rem;
-    border-radius: 2px;
-}
-div[data-testid="stMetricLabel"] {
-    font-size: 0.7rem !important;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: #5C5848 !important;
-}
-div[data-testid="stMetricValue"] {
-    font-family: 'IBM Plex Serif', serif !important;
-    color: #1F2E3D !important;
+/* tighten column gaps so stat cards sit flush like a ledger row */
+div[data-testid="column"] {
+    padding-left: 0.3rem !important;
+    padding-right: 0.3rem !important;
 }
 
 .stTabs [data-baseweb="tab"] {
@@ -140,6 +128,24 @@ div[data-testid="stMetricValue"] {
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+
+
+# =========================
+# STAT CARD HELPER
+# =========================
+
+def stat_card(label, value, accent="#2C4A6E"):
+    return f"""<div style="background:#FAF7EE;border:1px solid #C9C0A8;border-left:4px solid {accent};
+border-radius:2px;padding:0.75rem 1rem 0.6rem 1rem;width:100%;box-sizing:border-box;margin-bottom:0.3rem;">
+<div style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;text-transform:uppercase;
+letter-spacing:0.13em;color:#5C5848;font-weight:600;margin-bottom:0.25rem;">{label}</div>
+<div style="font-family:'IBM Plex Serif',serif;font-size:1.45rem;color:#1F2E3D;font-weight:600;line-height:1.1;">{value}</div>
+</div>"""
+
+def stat_row(items, accent="#2C4A6E"):
+    cols = st.columns(len(items))
+    for col, (label, value) in zip(cols, items):
+        col.markdown(stat_card(label, value, accent), unsafe_allow_html=True)
 
 
 # =========================
@@ -423,10 +429,11 @@ with tab_proforma:
         net_monthly_cash_flow = noi - initial_monthly_pni
         coc_return = (net_monthly_cash_flow * 12) / total_capital_invested if total_capital_invested > 0 else 0
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total All-In Capital", f"${total_capital_invested:,.2f}")
-        m2.metric("Monthly Cash Flow", f"${net_monthly_cash_flow:,.2f}")
-        m3.metric("Cash-on-Cash Return", f"{coc_return * 100:.2f}%")
+        stat_row([
+            ("Total All-In Capital", f"${total_capital_invested:,.2f}"),
+            ("Monthly Cash Flow", f"${net_monthly_cash_flow:,.2f}"),
+            ("Cash-on-Cash Return", f"{coc_return * 100:.2f}%"),
+        ])
 
     elif strategy == "Flip":
         # Total project cost = purchase + rehab + buy/sell closing + holding,
@@ -439,10 +446,11 @@ with tab_proforma:
         flip_profit = arv - initial_loan_amount - total_cash_invested - closing_costs_sell
         roi = (flip_profit / total_cash_invested) * 100 if total_cash_invested > 0 else 0
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total Cash Invested", f"${total_cash_invested:,.2f}")
-        m2.metric("Net Flip Profit", f"${flip_profit:,.2f}")
-        m3.metric("Return on Investment (ROI)", f"{roi:.2f}%")
+        stat_row([
+            ("Total Cash Invested", f"${total_cash_invested:,.2f}"),
+            ("Net Flip Profit", f"${flip_profit:,.2f}"),
+            ("Return on Investment", f"{roi:.2f}%"),
+        ])
 
     elif strategy == "BRRRR":
         upfront_cash_invested = (
@@ -452,16 +460,13 @@ with tab_proforma:
         final_cash_left_in_deal = max(0, net_trapped_equity)
         net_monthly_cash_flow = noi - refi_monthly_pni
 
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Initial Capital Outlays", f"${upfront_cash_invested:,.2f}")
-        m2.metric("Net Cash Trapped In Asset", f"${final_cash_left_in_deal:,.2f}")
-        m3.metric("Post-Refi Monthly Cash Flow", f"${net_monthly_cash_flow:,.2f}")
-
-        if net_trapped_equity <= 0:
-            m4.metric("Cash-on-Cash Return", "Infinite (No Cash Left)")
-        else:
-            coc_return = (net_monthly_cash_flow * 12) / final_cash_left_in_deal
-            m4.metric("Cash-on-Cash Return", f"{coc_return * 100:.2f}%")
+        coc_label = "Infinite — No Cash Left" if net_trapped_equity <= 0 else f"{(net_monthly_cash_flow * 12) / final_cash_left_in_deal * 100:.2f}%"
+        stat_row([
+            ("Initial Capital Outlays", f"${upfront_cash_invested:,.2f}"),
+            ("Net Cash Trapped In Asset", f"${final_cash_left_in_deal:,.2f}"),
+            ("Post-Refi Monthly Cash Flow", f"${net_monthly_cash_flow:,.2f}"),
+            ("Cash-on-Cash Return", coc_label),
+        ])
 
 
 # =========================
@@ -501,15 +506,12 @@ with tab_buildability:
 
     st.markdown('<hr class="atlas-rule">', unsafe_allow_html=True)
     st.subheader("Scored Parcel Summary")
-    col_a, col_b, col_c, col_d = st.columns(4)
-    with col_a:
-        st.metric("Total Parcels", f"{len(df):,}")
-    with col_b:
-        st.metric("Avg Buildability", f"{df['buildability_score'].mean():.1f}")
-    with col_c:
-        st.metric("Avg Property Value", f"${df['property_value'].mean():,.0f}")
-    with col_d:
-        st.metric("Avg Suppression Index", f"{df['suppression_index'].mean():.1f}")
+    stat_row([
+        ("Total Parcels", f"{len(df):,}"),
+        ("Avg Buildability Score", f"{df['buildability_score'].mean():.1f} / 100"),
+        ("Avg Property Value", f"${df['property_value'].mean():,.0f}"),
+        ("Avg Suppression Index", f"{df['suppression_index'].mean():.1f} / 100"),
+    ], accent="#B5562F")
 
     st.markdown('<hr class="atlas-rule">', unsafe_allow_html=True)
     st.subheader("Parcel Map \u2014 Buildability")
@@ -550,7 +552,7 @@ with tab_buildability:
     deck = pdk.Deck(
         layers=[polygon_layer],
         initial_view_state=view_state,
-        map_style="mapbox://styles/mapbox/dark-v11",
+        map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
         tooltip=tooltip,
     )
     st.pydeck_chart(deck)
@@ -598,10 +600,11 @@ with tab_buildability:
                 unsafe_allow_html=True,
             )
 
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Assessed Value", f"${row.get('property_value', 0):,.0f}")
-            c2.metric("Suppression", f"{row.get('suppression_index', 0):.0f}")
-            c3.metric("Nearby Avg Value", f"${row.get('nearby_avg_value', 0):,.0f}")
-            c4.metric("Value Gap", f"{row.get('value_gap_pct', 0) * 100:.0f}%")
+            stat_row([
+                ("Assessed Value", f"${row.get('property_value', 0):,.0f}"),
+                ("Suppression Index", f"{row.get('suppression_index', 0):.0f} / 100"),
+                ("Nearby Avg Value", f"${row.get('nearby_avg_value', 0):,.0f}"),
+                ("Value Gap vs Nearby", f"{row.get('value_gap_pct', 0) * 100:.0f}%"),
+            ], accent="#B5562F")
     else:
         st.info("No parcels in Top 50 under current data.")
